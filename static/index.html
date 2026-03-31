@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Omnibus TOC Extractor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Omnibus TOC Extractor</h1>
+    <p class="subtitle">Drop an omnibus epub to extract its table of contents</p>
+
+    <div id="dropzone" class="dropzone">
+      <div class="dropzone-inner">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338-2.32 5.25 5.25 0 0 1 1.023 10.095M12 16.5H6.75" />
+        </svg>
+        <p>Drag &amp; drop an epub here</p>
+        <p class="hint">or <label for="fileInput" class="file-label">browse files</label></p>
+        <input type="file" id="fileInput" accept=".epub" />
+      </div>
+    </div>
+
+    <div id="error" class="error hidden"></div>
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>Parsing epub&hellip;</span>
+    </div>
+
+    <div id="results" class="results hidden">
+      <div class="results-header">
+        <div>
+          <h2 id="bookTitle"></h2>
+          <p id="pageCount" class="page-count"></p>
+        </div>
+        <button id="exportBtn" class="btn-export">Export JSON</button>
+      </div>
+      <table id="booksTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>Start Page</th>
+          </tr>
+        </thead>
+        <tbody id="booksBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
