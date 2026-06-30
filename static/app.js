@@ -7,6 +7,9 @@ const bookTitle = document.getElementById('bookTitle');
 const pageCount = document.getElementById('pageCount');
 const booksBody = document.getElementById('booksBody');
 const exportBtn = document.getElementById('exportBtn');
+const tocToggle = document.getElementById('tocToggle');
+const tocPanel  = document.getElementById('tocPanel');
+const tocList   = document.getElementById('tocList');
 
 let lastData = null;
 
@@ -74,18 +77,23 @@ function renderResults(data) {
   bookTitle.textContent = data.omnibus_title;
   pageCount.textContent = `${data.total_pages.toLocaleString()} pages total`;
 
+  renderBooks(data.child_books);
+  renderTocEditor(data.toc_entries);
+}
+
+function renderBooks(books) {
   booksBody.innerHTML = '';
 
-  if (!data.child_books || data.child_books.length === 0) {
+  if (!books || books.length === 0) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td colspan="3" style="color:var(--text-muted);text-align:center;padding:1.5rem">
-      No child books detected — the TOC may not have a nested structure.
+      No child books selected — use “Edit book starts” below to mark them.
     </td>`;
     booksBody.appendChild(tr);
     return;
   }
 
-  data.child_books.forEach((book, i) => {
+  books.forEach((book, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${i + 1}</td>
@@ -96,11 +104,78 @@ function renderResults(data) {
   });
 }
 
+// ── Book-start editor ──────────────────────────────────────────────────────────
+
+function renderTocEditor(entries) {
+  tocList.innerHTML = '';
+
+  if (!entries || entries.length === 0) {
+    tocToggle.classList.add('hidden');
+    return;
+  }
+  tocToggle.classList.remove('hidden');
+
+  entries.forEach((entry, i) => {
+    const li = document.createElement('li');
+    const id = `toc-${i}`;
+    li.innerHTML = `
+      <label for="${id}">
+        <input type="checkbox" id="${id}" data-idx="${i}" ${entry.is_book_start ? 'checked' : ''}>
+        <span class="toc-title">${escHtml(entry.title) || '<em>(untitled)</em>'}</span>
+        <span class="toc-page">p.${entry.start_page.toLocaleString()}</span>
+      </label>
+    `;
+    li.querySelector('input').addEventListener('change', onTocChange);
+    tocList.appendChild(li);
+  });
+}
+
+function onTocChange(e) {
+  const idx = Number(e.target.dataset.idx);
+  lastData.toc_entries[idx].is_book_start = e.target.checked;
+
+  // Rebuild child_books from every entry currently marked as a book start.
+  const marked = lastData.toc_entries.filter((entry) => entry.is_book_start);
+  lastData.child_books = numberDuplicateTitles(
+    marked.map((entry) => ({ title: entry.title, start_page: entry.start_page }))
+  );
+
+  renderBooks(lastData.child_books);
+}
+
+// Mirror of the server's _number_duplicate_titles: when several books share a
+// title, append "1", "2", … so each child book is distinguishable.
+function numberDuplicateTitles(books) {
+  const counts = {};
+  books.forEach((b) => { counts[b.title] = (counts[b.title] || 0) + 1; });
+  const seen = {};
+  return books.map((b) => {
+    if (counts[b.title] > 1) {
+      seen[b.title] = (seen[b.title] || 0) + 1;
+      return { title: `${b.title} ${seen[b.title]}`, start_page: b.start_page };
+    }
+    return b;
+  });
+}
+
+tocToggle.addEventListener('click', () => {
+  const open = tocPanel.classList.toggle('hidden') === false;
+  tocToggle.setAttribute('aria-expanded', String(open));
+  tocToggle.querySelector('.chevron').textContent = open ? '▾' : '▸';
+});
+
 // ── Export ───────────────────────────────────────────────────────────────────
 
 exportBtn.addEventListener('click', () => {
   if (!lastData) return;
-  const json = JSON.stringify(lastData, null, 2);
+  // Export the clean public structure, not the internal toc_entries list.
+  const payload = {
+    omnibus_title: lastData.omnibus_title,
+    total_pages: lastData.total_pages,
+    page_count_method: lastData.page_count_method,
+    child_books: lastData.child_books,
+  };
+  const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');

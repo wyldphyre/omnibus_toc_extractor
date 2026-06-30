@@ -75,7 +75,11 @@ Epub files are ZIP archives. The parser reads the epub's `toc.ncx` (EPUB2) or na
 **Child book detection** handles two TOC structures found in real-world omnibus epubs:
 
 - **Nested** — top-level NCX entries that contain child entries are treated as child books. This is the most common structure.
-- **Flat** — all NCX entries at the same depth. The parser filters out front/back matter and chapter entries, leaving book-boundary entries. If Book 1 has no explicit title entry, its name is derived from the sibling entries (e.g. "Battle Mage 2", "Battle Mage 3" → Book 1 is "Battle Mage").
+- **Flat** — all NCX entries at the same depth. The parser filters out front/back matter, chapter entries (including bare-number chapter titles like "1", "2") and per-book status sheets, leaving book-boundary entries. If Book 1 has no explicit title entry, its name is derived from the sibling entries (e.g. "Battle Mage 2", "Battle Mage 3" → Book 1 is "Battle Mage").
+
+### Marking book starts manually
+
+Some omnibuses list every book title and every chapter at the same TOC level with no grouping, so auto-detection can't always tell book boundaries from chapters. For these (and any case where the automatic result is wrong), expand **Edit book starts** under the results table. It lists every TOC entry with a checkbox, pre-ticked with the parser's best guess. Tick or untick entries to mark which ones begin a child book — the child-book table and the exported JSON update live.
 
 When multiple child books share the same title (some omnibuses don't differentiate them in the TOC), they are automatically numbered: "The Arcane Lord" → "The Arcane Lord 1", "The Arcane Lord 2", etc.
 
@@ -86,5 +90,5 @@ When multiple child books share the same title (some omnibuses don't differentia
 
 ## Limitations
 
-- Child book detection works best when the TOC has a clear structure. Omnibuses where every chapter is listed at the top level with no book-level grouping will not produce child book results.
+- Automatic child book detection works best when the TOC has a clear structure. When it gets a flat or ambiguous TOC wrong, use **Edit book starts** to mark the boundaries by hand.
 - Only the first root OPF document is parsed. Epubs with multiple renditions are not supported.

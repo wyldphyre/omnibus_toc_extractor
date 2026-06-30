@@ -29,6 +29,7 @@ _FRONT_BACK_MATTER = re.compile(
     r"|sign\s*up|bonus|excerpt|sample|preview"
     r"|want\s*more|check\s*this\s*out|more\s*from|more\s*stories"
     r"|get\s*(it|them|your)|claim\s*your"
+    r"|(final\s+)?status\s*sheet|character\s*sheet|stat\s*sheet"
     r"|links?|resources|connect|social\s*media)\b",
     re.IGNORECASE,
 )
@@ -39,6 +40,10 @@ _CHAPTER_LIKE = re.compile(
     r"|appendix|glossary|afterword|author.s\s*note)\b",
     re.IGNORECASE,
 )
+
+# Entries whose title is just a bare number ("1", "2", ...) are chapter entries
+# in omnibuses that don't prefix chapters with the word "Chapter".
+_BARE_NUMBER = re.compile(r"^\s*\d+\s*$")
 
 # NCX namespace
 _NCX_NS = "http://www.daisy.org/z3986/2005/ncx/"
@@ -96,10 +101,13 @@ class EpubParser:
             page_count_method = "ncx-metadata"
             total_pages = total_pages_ncx
             child_books = self._extract_child_books(nav_points, title, total_pages)
+            toc_entries = self._build_toc_entries(
+                nav_points, lambda np: np.play_order, page_cutoff=total_pages
+            )
         else:
             # No page metadata — estimate via word count across the spine
             page_count_method = "word-count-estimate"
-            total_pages, child_books = self._estimate_pages_from_spine(
+            total_pages, child_books, toc_entries = self._estimate_pages_from_spine(
                 nav_points, title, spine
             )
 
@@ -108,6 +116,10 @@ class EpubParser:
             "total_pages": total_pages,
             "page_count_method": page_count_method,
             "child_books": child_books,
+            # Flat list of every TOC entry, each flagged with the parser's
+            # best guess at whether it starts a child book. The UI lets the
+            # user override these flags when auto-detection gets it wrong.
+            "toc_entries": toc_entries,
         }
 
     # ------------------------------------------------------------------
@@ -379,6 +391,68 @@ class EpubParser:
     # Child book detection
     # ------------------------------------------------------------------
 
+    @classmethod
+    def _is_book_candidate(cls, title: str) -> bool:
+        """True if a flat-TOC entry title could be a child-book boundary.
+
+        Excludes blank titles, front/back matter, chapter-like headings, and
+        bare-number chapter entries ("1", "2", ...).
+        """
+        t = title.strip()
+        if not t:
+            return False
+        if _BARE_NUMBER.match(t):
+            return False
+        if _FRONT_BACK_MATTER.match(t):
+            return False
+        if _CHAPTER_LIKE.match(t):
+            return False
+        return True
+
+    def _build_toc_entries(
+        self, nav_points: list, start_page_for, page_cutoff: int = 0
+    ) -> list:
+        """Flatten nav_points into a list of {title, start_page, is_book_start}.
+
+        ``start_page_for`` maps a NavPoint to its start page (playOrder for
+        page-metadata epubs, or a word-count estimate otherwise).
+
+        ``page_cutoff`` (when > 0) suppresses book-start flags for entries that
+        start beyond the real page count — these are back-matter promos rather
+        than child books.
+
+        ``is_book_start`` is the parser's best guess and seeds the checkboxes
+        in the manual book-start editor; the user can override any of them.
+        """
+        nested = any(np.children for np in nav_points)
+        entries = []
+
+        if nested:
+            def walk(np, is_top):
+                entries.append({
+                    "title": np.title,
+                    "start_page": start_page_for(np),
+                    "is_book_start": bool(is_top and np.children),
+                })
+                for child in np.children:
+                    walk(child, False)
+
+            for np in nav_points:
+                walk(np, True)
+        else:
+            for np in nav_points:
+                start_page = start_page_for(np)
+                is_book_start = self._is_book_candidate(np.title)
+                if page_cutoff and start_page > page_cutoff:
+                    is_book_start = False
+                entries.append({
+                    "title": np.title,
+                    "start_page": start_page,
+                    "is_book_start": is_book_start,
+                })
+
+        return entries
+
     def _extract_child_books(
         self, nav_points: list, omnibus_title: str, total_pages: int
     ) -> list:
@@ -438,12 +512,7 @@ class EpubParser:
         # Exclude entries beyond total_pages (back-matter promotional content).
         book_entries = []
         for np in nav_points:
-            t = np.title.strip()
-            if not t:
-                continue
-            if _FRONT_BACK_MATTER.match(t):
-                continue
-            if _CHAPTER_LIKE.match(t):
+            if not self._is_book_candidate(np.title):
                 continue
             if total_pages and np.play_order > total_pages:
                 continue
@@ -549,7 +618,7 @@ class EpubParser:
         """
         Estimate total pages and child book start pages via word count.
 
-        Returns (total_pages, child_books list).
+        Returns (total_pages, child_books, toc_entries).
         """
         zip_names = set(self._zip.namelist())
 
@@ -577,21 +646,28 @@ class EpubParser:
         def words_to_page(words: int) -> int:
             return max(1, round(words / self._WORDS_PER_PAGE) + 1)
 
-        # Determine child books, then map each book's href to a start page
-        child_books_raw = self._extract_child_books(nav_points, omnibus_title, 0)
+        def find_words_before(href: str) -> int:
+            # Try exact match first, then basename match
+            if href in words_before:
+                return words_before[href]
+            base = posixpath.basename(href)
+            for path, wc in words_before.items():
+                if posixpath.basename(path) == base:
+                    return wc
+            return 0
 
-        # For each child book, find its starting href in the spine
-        # The navPoint href already has the fragment stripped by the parser
-        for book in child_books_raw:
-            # _extract_child_books doesn't carry the href, so re-derive from nav_points
-            pass
-
-        # We need hrefs from the nav_points, so redo the mapping here
+        # Auto-detected child books (href -> page via word count)
         child_books = self._map_child_books_to_pages(
             nav_points, omnibus_title, words_before, total_words, total_pages
         )
 
-        return total_pages, child_books
+        # Full flat TOC for the manual book-start editor
+        toc_entries = self._build_toc_entries(
+            nav_points,
+            lambda np: words_to_page(find_words_before(np.href)),
+        )
+
+        return total_pages, child_books, toc_entries
 
     def _map_child_books_to_pages(
         self,
@@ -630,12 +706,7 @@ class EpubParser:
             return self._number_duplicate_titles(books)
 
         # Flat structure — filter same as _detect_flat_books
-        book_entries = []
-        for np in nav_points:
-            t = np.title.strip()
-            if not t or _FRONT_BACK_MATTER.match(t) or _CHAPTER_LIKE.match(t):
-                continue
-            book_entries.append(np)
+        book_entries = [np for np in nav_points if self._is_book_candidate(np.title)]
 
         if not book_entries:
             return []

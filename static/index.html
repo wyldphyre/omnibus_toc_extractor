@@ -46,6 +46,19 @@
         </thead>
         <tbody id="booksBody"></tbody>
       </table>
+
+      <div class="toc-editor">
+        <button id="tocToggle" class="btn-toc-toggle" aria-expanded="false">
+          <span class="chevron">▸</span> Edit book starts
+        </button>
+        <div id="tocPanel" class="toc-panel hidden">
+          <p class="toc-help">
+            Tick the entries that begin a child book. The table above and the
+            exported JSON update as you change the selection.
+          </p>
+          <ul id="tocList" class="toc-list"></ul>
+        </div>
+      </div>
     </div>
   </div>
 
