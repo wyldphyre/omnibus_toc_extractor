@@ -10,8 +10,27 @@ const exportBtn = document.getElementById('exportBtn');
 const tocToggle = document.getElementById('tocToggle');
 const tocPanel  = document.getElementById('tocPanel');
 const tocList   = document.getElementById('tocList');
+const versionEl = document.getElementById('version');
 
 let lastData = null;
+
+// ── Version ──────────────────────────────────────────────────────────────────
+
+// The page is served as a static file, so the version is fetched rather than
+// baked in — that keeps app/__init__.py the only place it's defined. If the
+// request fails the footer simply stays empty.
+(async function showVersion() {
+  try {
+    const resp = await fetch('/api/version');
+    if (!resp.ok) return;
+    const { version } = await resp.json();
+    if (!version) return;
+    versionEl.textContent = `v${version}`;
+    versionEl.classList.remove('hidden');
+  } catch {
+    /* no version shown */
+  }
+})();
 
 // ── Drag & drop ──────────────────────────────────────────────────────────────
 
@@ -56,10 +75,12 @@ async function handleFile(file) {
 
   try {
     const resp = await fetch('/api/extract', { method: 'POST', body: form });
-    const data = await resp.json();
+    // An error response isn't always JSON (a proxy timing out, say), so a
+    // failure to parse the body must not be reported as a network error.
+    const data = await resp.json().catch(() => null);
 
-    if (!resp.ok || data.error) {
-      showError(data.error || `Server error (${resp.status})`);
+    if (!resp.ok || !data || data.error) {
+      showError((data && data.error) || `Server error (${resp.status})`);
       return;
     }
 
@@ -134,13 +155,23 @@ function onTocChange(e) {
   const idx = Number(e.target.dataset.idx);
   lastData.toc_entries[idx].is_book_start = e.target.checked;
 
-  // Rebuild child_books from every entry currently marked as a book start.
-  const marked = lastData.toc_entries.filter((entry) => entry.is_book_start);
-  lastData.child_books = numberDuplicateTitles(
-    marked.map((entry) => ({ title: entry.title, start_page: entry.start_page }))
-  );
+  lastData.child_books = booksFromEntries(lastData.toc_entries);
 
   renderBooks(lastData.child_books);
+}
+
+// Mirror of the server's _books_from_entries. An entry carries a book_title
+// when the name of the book starting there differs from its TOC label — a book
+// whose first chapter is its only TOC entry, for instance.
+function booksFromEntries(entries) {
+  return numberDuplicateTitles(
+    entries
+      .filter((entry) => entry.is_book_start)
+      .map((entry) => ({
+        title: entry.book_title || entry.title,
+        start_page: entry.start_page,
+      }))
+  );
 }
 
 // Mirror of the server's _number_duplicate_titles: when several books share a
@@ -181,8 +212,12 @@ exportBtn.addEventListener('click', () => {
   const a    = document.createElement('a');
   a.href     = url;
   a.download = sanitizeFilename(lastData.omnibus_title) + '.json';
+  // The anchor has to be in the document for the click to count, and the URL
+  // has to outlive the click or the download is cancelled before it starts.
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

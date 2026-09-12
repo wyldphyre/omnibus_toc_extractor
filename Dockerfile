@@ -10,4 +10,6 @@ COPY static/ ./static/
 
 EXPOSE 5000
 
-CMD ["python", "-m", "flask", "--app", "app.main", "run", "--host", "0.0.0.0", "--port", "5000"]
+# waitress rather than "flask run": the Flask dev server is single-threaded
+# and explicitly not meant to serve real traffic.
+CMD ["python", "-m", "waitress", "--host", "0.0.0.0", "--port", "5000", "app.main:app"]
