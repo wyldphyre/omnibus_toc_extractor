@@ -302,6 +302,18 @@ tbody td:last-child {
   font-weight: 600;
 }
 
+/* Footer */
+.footer {
+  margin-top: 2.5rem;
+  text-align: center;
+}
+
+.version {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .hidden {
   display: none !important;
 }
